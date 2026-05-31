@@ -37,17 +37,43 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Restore release keystore
+        if: github.event_name != 'pull_request'
+        env:
+          BATTERYMONITOR_KEYSTORE_BASE64: ${{ secrets.BATTERYMONITOR_KEYSTORE_BASE64 }}
+          BATTERYMONITOR_KEYSTORE_PASSWORD: ${{ secrets.BATTERYMONITOR_KEYSTORE_PASSWORD }}
+          BATTERYMONITOR_KEY_ALIAS: ${{ secrets.BATTERYMONITOR_KEY_ALIAS }}
+          BATTERYMONITOR_KEY_PASSWORD: ${{ secrets.BATTERYMONITOR_KEY_PASSWORD }}
+        run: |
+          if [ -z "$BATTERYMONITOR_KEYSTORE_BASE64" ] || [ -z "$BATTERYMONITOR_KEYSTORE_PASSWORD" ] || [ -z "$BATTERYMONITOR_KEY_ALIAS" ] || [ -z "$BATTERYMONITOR_KEY_PASSWORD" ]; then
+            echo "::error::Missing one or more release signing secrets: BATTERYMONITOR_KEYSTORE_BASE64, BATTERYMONITOR_KEYSTORE_PASSWORD, BATTERYMONITOR_KEY_ALIAS, BATTERYMONITOR_KEY_PASSWORD."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/keystores"
+          echo "$BATTERYMONITOR_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/keystores/batterymonitor-release.jks"
+
       - name: Run unit tests
         run: ./gradlew :app:testDebugUnitTest
 
-      - name: Build debug and release APKs
-        run: ./gradlew :app:assembleDebug :app:assembleRelease
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug
+
+      - name: Build signed release APK
+        if: github.event_name != 'pull_request'
+        env:
+          BATTERYMONITOR_KEYSTORE_FILE: ${{ runner.temp }}/keystores/batterymonitor-release.jks
+          BATTERYMONITOR_KEYSTORE_PASSWORD: ${{ secrets.BATTERYMONITOR_KEYSTORE_PASSWORD }}
+          BATTERYMONITOR_KEY_ALIAS: ${{ secrets.BATTERYMONITOR_KEY_ALIAS }}
+          BATTERYMONITOR_KEY_PASSWORD: ${{ secrets.BATTERYMONITOR_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease
 
       - name: Stage APKs
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/batterymonitor-debug-latest.apk
-          cp app/build/outputs/apk/release/app-release-unsigned.apk dist/batterymonitor-release-unsigned-latest.apk
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk dist/batterymonitor-release-latest.apk
+          fi
 
       - name: Upload latest APK artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -84,5 +110,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Latest Build" \
-            --notes "Automated APK build for $GITHUB_SHA." \
+            --notes "Installable debug and signed release APKs for $GITHUB_SHA. Requires Android 14 / API 34 or newer." \
             --latest

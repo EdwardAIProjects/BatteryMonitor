@@ -3,6 +3,17 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val releaseKeystoreFile = providers.environmentVariable("BATTERYMONITOR_KEYSTORE_FILE")
+val releaseKeystorePassword = providers.environmentVariable("BATTERYMONITOR_KEYSTORE_PASSWORD")
+val releaseKeyAlias = providers.environmentVariable("BATTERYMONITOR_KEY_ALIAS")
+val releaseKeyPassword = providers.environmentVariable("BATTERYMONITOR_KEY_PASSWORD")
+val hasReleaseSigning = listOf(
+    releaseKeystoreFile,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { it.isPresent }
+
 android {
     namespace = "dev.hydranet.batman"
     compileSdk {
@@ -21,9 +32,23 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseKeystoreFile.get())
+                storePassword = releaseKeystorePassword.get()
+                keyAlias = releaseKeyAlias.get()
+                keyPassword = releaseKeyPassword.get()
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
