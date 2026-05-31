@@ -130,7 +130,6 @@ class MainActivity : ComponentActivity() {
                     onSelectedThresholdChange = { selectedThreshold = it },
                     onAddThreshold = {
                         thresholds = BatteryWarningStore.addThreshold(context, selectedThreshold)
-                        selectedThreshold = suggestedThreshold(thresholds)
                         BatteryWarningNotifier.checkAndNotify(context)
                     },
                     onRemoveThreshold = { threshold ->
