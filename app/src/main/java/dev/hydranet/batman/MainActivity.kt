@@ -153,7 +153,7 @@ fun BatteryWarningsScreen(
             LargeTopAppBar(
                 title = {
                     Text(
-                        text = "Battery warnings",
+                        text = "Battery Notifier",
                         style = MaterialTheme.typography.headlineMedium,
                     )
                 },

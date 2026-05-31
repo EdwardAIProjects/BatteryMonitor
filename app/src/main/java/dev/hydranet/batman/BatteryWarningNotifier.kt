@@ -14,7 +14,7 @@ import androidx.core.content.ContextCompat
 
 object BatteryWarningNotifier {
     private const val CHANNEL_ID = "battery_warnings"
-    private const val CHANNEL_NAME = "Battery warnings"
+    private const val CHANNEL_NAME = "Battery Notifier"
     private const val NOTIFICATION_ID = 1001
 
     fun checkAndNotify(context: Context): Int? {
