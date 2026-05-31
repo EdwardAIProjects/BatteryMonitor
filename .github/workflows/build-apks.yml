@@ -46,13 +46,13 @@ jobs:
       - name: Stage APKs
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/batman-debug-latest.apk
-          cp app/build/outputs/apk/release/app-release-unsigned.apk dist/batman-release-unsigned-latest.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/batterymonitor-debug-latest.apk
+          cp app/build/outputs/apk/release/app-release-unsigned.apk dist/batterymonitor-release-unsigned-latest.apk
 
       - name: Upload latest APK artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: batman-latest-apks
+          name: batterymonitor-latest-apks
           path: dist/*.apk
           if-no-files-found: error
 
@@ -71,7 +71,7 @@ jobs:
       - name: Download APK artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: batman-latest-apks
+          name: batterymonitor-latest-apks
           path: dist
 
       - name: Publish latest release
@@ -83,6 +83,6 @@ jobs:
           gh release create latest dist/*.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Latest APK build" \
+            --title "Latest Build" \
             --notes "Automated APK build for $GITHUB_SHA." \
             --latest
