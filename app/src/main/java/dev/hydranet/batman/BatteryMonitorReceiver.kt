@@ -11,6 +11,9 @@ class BatteryMonitorReceiver : BroadcastReceiver() {
             intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
         ) {
             BatteryMonitorJobService.schedule(context)
+            if (BatteryWarningNotifier.canPostNotifications(context)) {
+                BatteryMonitorForegroundService.start(context)
+            }
         }
 
         BatteryWarningNotifier.checkAndNotify(context)
