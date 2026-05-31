@@ -73,6 +73,9 @@ class MainActivity : ComponentActivity() {
         BatteryWarningNotifier.createNotificationChannel(this)
         BatteryMonitorJobService.schedule(this)
         BatteryWarningNotifier.checkAndNotify(this)
+        if (BatteryWarningNotifier.canPostNotifications(this)) {
+            BatteryMonitorForegroundService.start(this)
+        }
 
         setContent {
             BatmanTheme {
@@ -92,7 +95,10 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.RequestPermission(),
                 ) { granted ->
                     notificationsAllowed = granted
-                    if (granted) BatteryWarningNotifier.checkAndNotify(context)
+                    if (granted) {
+                        BatteryMonitorForegroundService.start(context)
+                        BatteryWarningNotifier.checkAndNotify(context)
+                    }
                 }
                 val batteryOptimizationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult(),
