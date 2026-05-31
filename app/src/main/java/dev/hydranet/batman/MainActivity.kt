@@ -1,6 +1,7 @@
 package dev.hydranet.batman
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -32,7 +33,6 @@ import androidx.compose.material.icons.outlined.BatteryFull
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.Button
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -85,11 +85,21 @@ class MainActivity : ComponentActivity() {
                 var notificationsAllowed by remember {
                     mutableStateOf(BatteryWarningNotifier.canPostNotifications(context))
                 }
+                var batteryOptimizationsDisabled by remember {
+                    mutableStateOf(BatteryOptimizationAccess.isIgnoringOptimizations(context))
+                }
                 val permissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission(),
                 ) { granted ->
                     notificationsAllowed = granted
                     if (granted) BatteryWarningNotifier.checkAndNotify(context)
+                }
+                val batteryOptimizationLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult(),
+                ) {
+                    batteryOptimizationsDisabled = BatteryOptimizationAccess.isIgnoringOptimizations(context)
+                    BatteryMonitorJobService.schedule(context)
+                    BatteryWarningNotifier.checkAndNotify(context)
                 }
 
                 DisposableEffect(context) {
@@ -116,6 +126,7 @@ class MainActivity : ComponentActivity() {
                     selectedThreshold = selectedThreshold,
                     currentBatteryPercent = currentBatteryPercent,
                     notificationsAllowed = notificationsAllowed,
+                    batteryOptimizationsDisabled = batteryOptimizationsDisabled,
                     onSelectedThresholdChange = { selectedThreshold = it },
                     onAddThreshold = {
                         thresholds = BatteryWarningStore.addThreshold(context, selectedThreshold)
@@ -127,6 +138,15 @@ class MainActivity : ComponentActivity() {
                     },
                     onRequestNotifications = {
                         permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    },
+                    onRequestBatteryOptimizationExemption = {
+                        try {
+                            batteryOptimizationLauncher.launch(BatteryOptimizationAccess.requestIntent(context))
+                        } catch (_: ActivityNotFoundException) {
+                            batteryOptimizationLauncher.launch(BatteryOptimizationAccess.settingsIntent())
+                        } catch (_: SecurityException) {
+                            batteryOptimizationLauncher.launch(BatteryOptimizationAccess.settingsIntent())
+                        }
                     },
                 )
             }
@@ -141,10 +161,12 @@ fun BatteryWarningsScreen(
     selectedThreshold: Int,
     currentBatteryPercent: Int?,
     notificationsAllowed: Boolean,
+    batteryOptimizationsDisabled: Boolean,
     onSelectedThresholdChange: (Int) -> Unit,
     onAddThreshold: () -> Unit,
     onRemoveThreshold: (Int) -> Unit,
     onRequestNotifications: () -> Unit,
+    onRequestBatteryOptimizationExemption: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -171,14 +193,20 @@ fun BatteryWarningsScreen(
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item {
-                CurrentBatteryPanel(currentBatteryPercent)
-            }
-
             if (!notificationsAllowed) {
                 item {
                     NotificationPermissionPanel(onRequestNotifications)
                 }
+            }
+
+            if (!batteryOptimizationsDisabled) {
+                item {
+                    BatteryOptimizationPanel(onRequestBatteryOptimizationExemption)
+                }
+            }
+
+            item {
+                CurrentBatteryPanel(currentBatteryPercent)
             }
 
             item {
@@ -256,39 +284,111 @@ private fun CurrentBatteryPanel(currentBatteryPercent: Int?) {
 
 @Composable
 private fun NotificationPermissionPanel(onRequestNotifications: () -> Unit) {
-    ElevatedCard(
+    Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        ),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 2.dp,
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Notifications,
-                contentDescription = null,
-                modifier = Modifier.size(28.dp),
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Notifications are off",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Notifications,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp),
                 )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Notifications disabled",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "Enable notifications to receive battery alerts.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            OutlinedButton(
+                onClick = onRequestNotifications,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Notifications,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.size(8.dp))
                 Text(
-                    text = "Enable alerts",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "Enable notifications",
                 )
             }
-            OutlinedButton(onClick = onRequestNotifications) {
-                Text("Allow")
+        }
+    }
+}
+
+@Composable
+private fun BatteryOptimizationPanel(onRequestExemption: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 2.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.BatteryAlert,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Background checks may be delayed",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "Allow unrestricted battery use so alerts keep working when the app is minimized.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            OutlinedButton(
+                onClick = onRequestExemption,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.BatteryAlert,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+                Text("Allow background checks")
             }
         }
     }
@@ -429,10 +529,12 @@ private fun BatteryWarningsScreenPreview() {
             selectedThreshold = 15,
             currentBatteryPercent = 34,
             notificationsAllowed = false,
+            batteryOptimizationsDisabled = false,
             onSelectedThresholdChange = {},
             onAddThreshold = {},
             onRemoveThreshold = {},
             onRequestNotifications = {},
+            onRequestBatteryOptimizationExemption = {},
         )
     }
 }
