@@ -18,6 +18,11 @@ class BatteryMonitorForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        if (!BatteryWarningStore.isMonitoringEnabled(this)) {
+            stopSelf()
+            return
+        }
+
         createMonitorChannel()
         startForeground(
             MONITOR_NOTIFICATION_ID,
@@ -29,6 +34,11 @@ class BatteryMonitorForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!BatteryWarningStore.isMonitoringEnabled(this)) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         BatteryWarningNotifier.checkAndNotify(this)
         return START_STICKY
     }
@@ -97,6 +107,8 @@ class BatteryMonitorForegroundService : Service() {
         private const val MONITOR_NOTIFICATION_ID = 1002
 
         fun start(context: Context): Boolean {
+            if (!BatteryWarningStore.isMonitoringEnabled(context)) return false
+
             return try {
                 ContextCompat.startForegroundService(
                     context,
@@ -108,6 +120,10 @@ class BatteryMonitorForegroundService : Service() {
             } catch (_: SecurityException) {
                 false
             }
+        }
+
+        fun stop(context: Context) {
+            context.stopService(Intent(context, BatteryMonitorForegroundService::class.java))
         }
     }
 }

@@ -19,6 +19,8 @@ object BatteryWarningNotifier {
 
     fun checkAndNotify(context: Context): Int? {
         BatteryWarningStore.ensureInitialized(context)
+        if (!BatteryWarningStore.isMonitoringEnabled(context)) return null
+
         createNotificationChannel(context)
 
         val batteryPercent = currentBatteryPercent(context) ?: return null

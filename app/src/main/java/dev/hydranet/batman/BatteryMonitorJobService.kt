@@ -9,7 +9,9 @@ import android.content.Context
 
 class BatteryMonitorJobService : JobService() {
     override fun onStartJob(params: JobParameters?): Boolean {
-        BatteryWarningNotifier.checkAndNotify(this)
+        if (BatteryWarningStore.isMonitoringEnabled(this)) {
+            BatteryWarningNotifier.checkAndNotify(this)
+        }
         return false
     }
 
@@ -20,6 +22,11 @@ class BatteryMonitorJobService : JobService() {
         private const val FIFTEEN_MINUTES_MS = 15 * 60 * 1000L
 
         fun schedule(context: Context) {
+            if (!BatteryWarningStore.isMonitoringEnabled(context)) {
+                cancel(context)
+                return
+            }
+
             val job = JobInfo.Builder(
                 JOB_ID,
                 ComponentName(context, BatteryMonitorJobService::class.java),
@@ -29,6 +36,10 @@ class BatteryMonitorJobService : JobService() {
                 .build()
 
             context.getSystemService(JobScheduler::class.java).schedule(job)
+        }
+
+        fun cancel(context: Context) {
+            context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
         }
     }
 }

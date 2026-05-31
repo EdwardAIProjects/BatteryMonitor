@@ -44,6 +44,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -55,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -87,6 +89,9 @@ class MainActivity : ComponentActivity() {
                 }
                 var notificationsAllowed by remember {
                     mutableStateOf(BatteryWarningNotifier.canPostNotifications(context))
+                }
+                var monitoringEnabled by remember {
+                    mutableStateOf(BatteryWarningStore.isMonitoringEnabled(context))
                 }
                 var batteryOptimizationsDisabled by remember {
                     mutableStateOf(BatteryOptimizationAccess.isIgnoringOptimizations(context))
@@ -128,12 +133,27 @@ class MainActivity : ComponentActivity() {
                 }
 
                 BatteryWarningsScreen(
-                    thresholds = thresholds,
-                    selectedThreshold = selectedThreshold,
-                    currentBatteryPercent = currentBatteryPercent,
-                    notificationsAllowed = notificationsAllowed,
-                    batteryOptimizationsDisabled = batteryOptimizationsDisabled,
-                    onSelectedThresholdChange = { selectedThreshold = it },
+                        thresholds = thresholds,
+                        selectedThreshold = selectedThreshold,
+                        currentBatteryPercent = currentBatteryPercent,
+                        monitoringEnabled = monitoringEnabled,
+                        notificationsAllowed = notificationsAllowed,
+                        batteryOptimizationsDisabled = batteryOptimizationsDisabled,
+                        onMonitoringEnabledChange = { enabled ->
+                            monitoringEnabled = enabled
+                            BatteryWarningStore.setMonitoringEnabled(context, enabled)
+                            if (enabled) {
+                                BatteryMonitorJobService.schedule(context)
+                                if (BatteryWarningNotifier.canPostNotifications(context)) {
+                                    BatteryMonitorForegroundService.start(context)
+                                }
+                                BatteryWarningNotifier.checkAndNotify(context)
+                            } else {
+                                BatteryMonitorJobService.cancel(context)
+                                BatteryMonitorForegroundService.stop(context)
+                            }
+                        },
+                        onSelectedThresholdChange = { selectedThreshold = it },
                     onAddThreshold = {
                         thresholds = BatteryWarningStore.addThreshold(context, selectedThreshold)
                         BatteryWarningNotifier.checkAndNotify(context)
@@ -165,8 +185,10 @@ fun BatteryWarningsScreen(
     thresholds: List<Int>,
     selectedThreshold: Int,
     currentBatteryPercent: Int?,
+    monitoringEnabled: Boolean,
     notificationsAllowed: Boolean,
     batteryOptimizationsDisabled: Boolean,
+    onMonitoringEnabledChange: (Boolean) -> Unit,
     onSelectedThresholdChange: (Int) -> Unit,
     onAddThreshold: () -> Unit,
     onRemoveThreshold: (Int) -> Unit,
@@ -206,8 +228,17 @@ fun BatteryWarningsScreen(
 
             if (!batteryOptimizationsDisabled) {
                 item {
-                    BatteryOptimizationPanel(onRequestBatteryOptimizationExemption)
+                    BatteryOptimizationPanel(
+                        onRequestExemption = onRequestBatteryOptimizationExemption,
+                    )
                 }
+            }
+
+            item {
+                MonitoringTogglePanel(
+                    monitoringEnabled = monitoringEnabled,
+                    onMonitoringEnabledChange = onMonitoringEnabledChange,
+                )
             }
 
             item {
@@ -218,6 +249,7 @@ fun BatteryWarningsScreen(
                 AddThresholdPanel(
                     threshold = selectedThreshold,
                     existingThresholds = thresholds,
+                    enabled = monitoringEnabled,
                     onThresholdChange = onSelectedThresholdChange,
                     onAddThreshold = onAddThreshold,
                 )
@@ -229,18 +261,21 @@ fun BatteryWarningsScreen(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 8.dp),
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .enabledAlpha(monitoringEnabled),
                 )
             }
 
             if (thresholds.isEmpty()) {
                 item {
-                    EmptyThresholdsPanel()
+                    EmptyThresholdsPanel(enabled = monitoringEnabled)
                 }
             } else {
                 items(thresholds, key = { threshold -> threshold }) { threshold ->
                     ThresholdRow(
                         threshold = threshold,
+                        enabled = monitoringEnabled,
                         onRemove = { onRemoveThreshold(threshold) },
                     )
                 }
@@ -283,6 +318,55 @@ private fun CurrentBatteryPanel(currentBatteryPercent: Int?) {
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun MonitoringTogglePanel(
+    monitoringEnabled: Boolean,
+    onMonitoringEnabledChange: (Boolean) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.BatteryAlert,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Battery monitoring",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = if (monitoringEnabled) {
+                        "Alerts are active"
+                    } else {
+                        "Alerts are paused"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = monitoringEnabled,
+                onCheckedChange = onMonitoringEnabledChange,
+            )
         }
     }
 }
@@ -345,7 +429,9 @@ private fun NotificationPermissionPanel(onRequestNotifications: () -> Unit) {
 }
 
 @Composable
-private fun BatteryOptimizationPanel(onRequestExemption: () -> Unit) {
+private fun BatteryOptimizationPanel(
+    onRequestExemption: () -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -403,13 +489,16 @@ private fun BatteryOptimizationPanel(onRequestExemption: () -> Unit) {
 private fun AddThresholdPanel(
     threshold: Int,
     existingThresholds: List<Int>,
+    enabled: Boolean,
     onThresholdChange: (Int) -> Unit,
     onAddThreshold: () -> Unit,
 ) {
     val isDuplicate = threshold in existingThresholds
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .enabledAlpha(enabled),
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 1.dp,
@@ -438,7 +527,7 @@ private fun AddThresholdPanel(
                 }
                 Button(
                     onClick = onAddThreshold,
-                    enabled = !isDuplicate,
+                    enabled = enabled && !isDuplicate,
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Add,
@@ -455,6 +544,7 @@ private fun AddThresholdPanel(
                     onThresholdChange(value.roundToInt().coerceIn(1, 100))
                 },
                 valueRange = 1f..100f,
+                enabled = enabled,
             )
         }
     }
@@ -463,10 +553,13 @@ private fun AddThresholdPanel(
 @Composable
 private fun ThresholdRow(
     threshold: Int,
+    enabled: Boolean,
     onRemove: () -> Unit,
 ) {
     ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .enabledAlpha(enabled),
         shape = RoundedCornerShape(8.dp),
     ) {
         ListItem(
@@ -485,7 +578,10 @@ private fun ThresholdRow(
                 )
             },
             trailingContent = {
-                IconButton(onClick = onRemove) {
+                IconButton(
+                    onClick = onRemove,
+                    enabled = enabled,
+                ) {
                     Icon(
                         imageVector = Icons.Outlined.Delete,
                         contentDescription = "Remove $threshold% warning",
@@ -497,11 +593,12 @@ private fun ThresholdRow(
 }
 
 @Composable
-private fun EmptyThresholdsPanel() {
+private fun EmptyThresholdsPanel(enabled: Boolean) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(112.dp),
+            .height(112.dp)
+            .enabledAlpha(enabled),
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
@@ -525,6 +622,12 @@ private fun suggestedThreshold(thresholds: List<Int>): Int {
         ?: 25
 }
 
+private fun Modifier.enabledAlpha(enabled: Boolean): Modifier {
+    return alpha(if (enabled) 1f else DISABLED_OPTIONS_ALPHA)
+}
+
+private const val DISABLED_OPTIONS_ALPHA = 0.45f
+
 @Preview(showBackground = true)
 @Composable
 private fun BatteryWarningsScreenPreview() {
@@ -533,8 +636,10 @@ private fun BatteryWarningsScreenPreview() {
             thresholds = listOf(50, 20, 10),
             selectedThreshold = 15,
             currentBatteryPercent = 34,
+            monitoringEnabled = true,
             notificationsAllowed = false,
             batteryOptimizationsDisabled = false,
+            onMonitoringEnabledChange = {},
             onSelectedThresholdChange = {},
             onAddThreshold = {},
             onRemoveThreshold = {},

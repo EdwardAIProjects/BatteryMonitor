@@ -6,6 +6,7 @@ object BatteryWarningStore {
     private const val PREFS_NAME = "battery_warning_settings"
     private const val KEY_THRESHOLDS = "thresholds"
     private const val KEY_WARNED_THRESHOLDS = "warned_thresholds"
+    private const val KEY_MONITORING_ENABLED = "monitoring_enabled"
 
     private val defaultThresholds = listOf(20, 10)
 
@@ -22,6 +23,16 @@ object BatteryWarningStore {
         ensureInitialized(context)
         return decode(preferences(context).getString(KEY_THRESHOLDS, null))
             .sortedDescending()
+    }
+
+    fun isMonitoringEnabled(context: Context): Boolean {
+        return preferences(context).getBoolean(KEY_MONITORING_ENABLED, true)
+    }
+
+    fun setMonitoringEnabled(context: Context, enabled: Boolean) {
+        preferences(context).edit()
+            .putBoolean(KEY_MONITORING_ENABLED, enabled)
+            .apply()
     }
 
     fun addThreshold(context: Context, threshold: Int): List<Int> {
