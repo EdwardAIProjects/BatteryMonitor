@@ -350,7 +350,6 @@ private fun AddThresholdPanel(
                     onThresholdChange(value.roundToInt().coerceIn(1, 100))
                 },
                 valueRange = 1f..100f,
-                steps = 98,
             )
         }
     }
