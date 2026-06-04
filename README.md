@@ -2,7 +2,7 @@
 
 Battery Notifier is a simple Android app that sends alerts when your device battery drops to configured levels.
 
-![Battery Notifier App Demo Screenshot](demo.png)
+<img src="demo.png" alt="Battery Notifier App Demo Screenshot" width="300">
 
 ## Features
 
